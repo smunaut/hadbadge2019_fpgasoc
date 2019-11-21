@@ -139,4 +139,4 @@ module IDDRX1F (
 		end
 	end
 
-endmodule;
+endmodule

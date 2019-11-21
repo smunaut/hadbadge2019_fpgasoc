@@ -43,6 +43,7 @@ SRC += $(addprefix misc/, \
 	fifo_sync_shift.v \
 	glitch_filter.v \
 	ram_sdp.v \
+	xclk_strobe.v \
 )
 
 	# QPI cache
@@ -152,6 +153,23 @@ SRC_SYNTH += $(addprefix hdmi/, \
 	vga2dvid.v \
 	vga.v \
 )
+
+	# HUB75
+SRC_SYNTH += $(addprefix hub75/, \
+	hub75_bcm.v \
+	hub75_blanking.v \
+	hub75_colormap.v \
+	hub75_framebuffer.v \
+	hub75_gamma.v \
+	hub75_init_inject.v \
+	hub75_linebuffer.v \
+	hub75_phy_ddr.v \
+	hub75_phy.v \
+	hub75_scan.v \
+	hub75_shift.v \
+	hub75_top.v \
+)
+
 
 EXTRA_DEPEND=rom_random_seeds0x123456.hex
 BRAMFILE=rom.hex

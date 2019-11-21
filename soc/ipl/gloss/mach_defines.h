@@ -138,6 +138,8 @@
 #define MISC_GPEXT_W2S_REG (25*4)
 /** Extended I/O: write 1 to clear output register */
 #define MISC_GPEXT_W2C_REG (26*4)
+/** Hub 75 */
+#define MISC_HUB75_REG (27*4)
 
 /* -------------- LCD interface defines --------------------- */
 

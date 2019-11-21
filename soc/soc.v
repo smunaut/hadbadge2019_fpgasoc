@@ -111,6 +111,8 @@ module soc(
 		output reg trace_en
 	);
 
+	reg [29:0] genio_out_i;
+	reg [29:0] genio_oe_i;
 
 	reg fpga_reload=0;
 	assign programn = ~fpga_reload;
@@ -400,6 +402,7 @@ module soc(
 	parameter MISC_REG_GPEXT_OE = 24;
 	parameter MISC_REG_GPEXT_W2S = 25;
 	parameter MISC_REG_GPEXT_W2C = 26;
+	parameter MISC_REG_HUB75 = 27;
 
 	wire [31:0] rngno;
 	rng rng(
@@ -462,15 +465,17 @@ module soc(
 			end else if (mem_addr[6:2]==MISC_REG_GENIO_IN) begin
 				mem_rdata = {2'h0, genio_in};
 			end else if (mem_addr[6:2]==MISC_REG_GENIO_OUT) begin
-				mem_rdata = {2'h0, genio_out};
+				mem_rdata = {2'h0, genio_out_i};
 			end else if (mem_addr[6:2]==MISC_REG_GENIO_OE) begin
-				mem_rdata = {2'h0, genio_oe};
+				mem_rdata = {2'h0, genio_oe_i};
 			end else if (mem_addr[6:2]==MISC_REG_GPEXT_IN) begin
 				mem_rdata = {usb_vdet, 7'h0, pmod_in, 2'h0, sao2_in, 2'h0, sao1_in};
 			end else if (mem_addr[6:2]==MISC_REG_GPEXT_OUT) begin
 				mem_rdata = {1'h0, irda_sd, 6'h0, pmod_out, 2'h0, sao2_out, 2'h0, sao1_out};
 			end else if (mem_addr[6:2]==MISC_REG_GPEXT_OE) begin
 				mem_rdata = {8'h0, pmod_oe, 2'h0, sao2_oe, 2'h0, sao1_oe};
+			end else if (mem_addr[6:2]==MISC_REG_HUB75) begin
+				mem_rdata = { hub75_ctl[31:30], hub75_frame_cur, hub75_ctl[27:0] };
 			end else begin
 				mem_rdata = 0;
 			end
@@ -713,7 +718,7 @@ module soc(
 	wire [31:0] qpi_wdata;
 	reg qpi_is_idle;
 
-	parameter integer QPI_MASTERCNT = 2;
+	parameter integer QPI_MASTERCNT = 3;
 
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_addr;
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
@@ -811,6 +816,113 @@ module soc(
 	assign qpimem_arb_do_write[1] = 0;
 	assign `SLICE_32(qpimem_arb_wdata, 1) = 0;
 
+
+	// HUB75 interface
+	// ---------------
+
+	wire [1:0] hub75_frame_req;
+	wire [1:0] hub75_frame_cur;
+	wire hub75_frame_start;
+
+	wire [4:0] hub75_addr;
+	wire [5:0] hub75_data;
+	wire hub75_clk;
+	wire hub75_le;
+	wire hub75_blank;
+
+	wire [23:0] hub75_fb_addr;
+	reg  [31:0] hub75_ctl;
+
+	wire irq_hub75;
+
+	hub75_top #(
+		.N_FB(4),
+		.N_BANKS(2),
+		.N_ROWS(32),
+		.N_COLS(64),
+		.N_CHANS(3),
+		.N_PLANES(8),
+		.BITDEPTH(16),
+		.PHY_N(1),
+		.PHY_DDR(0),
+		.PHY_AIR(0),
+		.PANEL_INIT("NONE"),
+		.SCAN_MODE("ZIGZAG"),
+	) hub75_I (
+		.hub75_addr_inc(),
+		.hub75_addr_rst(),
+		.hub75_addr(hub75_addr),
+		.hub75_data(hub75_data),
+		.hub75_clk(hub75_clk),
+		.hub75_le(hub75_le),
+		.hub75_blank(hub75_blank),
+		.fb_addr(hub75_fb_addr),
+		.fb_rdata(`SLICE_32(qpimem_arb_rdata, 2)),
+		.fb_do_read(qpimem_arb_do_read[2]),
+		.fb_next_word(qpimem_arb_next_word[2]),
+		.fb_is_idle(qpimem_arb_is_idle[2]),
+		.frame_req(hub75_ctl[29:28]),
+		.frame_cur(hub75_frame_cur),
+		.frame_start(hub75_frame_start),
+		.ctrl_run(hub75_ctl[31]),
+		.cfg_pre_latch_len(8'h00),
+		.cfg_latch_len(8'h00),
+		.cfg_post_latch_len(8'h00),
+		.cfg_bcm_bit_len({4'h0, hub75_ctl[27:24]}),
+		.cfg_fb_base(hub75_ctl[23:0]),
+		.clk(clk24m),
+		.clk_2x(clk48m),
+		.rst(rst)
+	);
+
+	// IRQ
+	assign irq_hub75 = hub75_frame_start & hub75_ctl[30];
+
+	// Full address map
+	assign `SLICE_32(qpimem_arb_addr, 2) = { 7'b000000, hub75_fb_addr, 1'b0 };
+
+	// Hub75 does not write
+	assign qpimem_arb_do_write[2] = 0;
+	assign `SLICE_32(qpimem_arb_wdata, 2) = 0;
+
+	// Pin map
+	always @(*)
+	begin
+		// Default
+		genio_out = genio_out_i;
+		genio_oe  = genio_oe_i;
+
+		// Re-assigned
+		genio_out[ 8] = hub75_data[5];
+		genio_out[ 7] = hub75_data[4];
+		genio_out[10] = hub75_data[3];
+		genio_out[12] = hub75_data[2];
+		genio_out[ 9] = hub75_data[1];
+		genio_out[14] = hub75_data[0];
+		genio_out[11] = hub75_addr[4];
+		genio_out[ 3] = hub75_addr[3];
+		genio_out[ 4] = hub75_addr[2];
+		genio_out[ 5] = hub75_addr[1];
+		genio_out[ 6] = hub75_addr[0];
+		genio_out[ 2] = hub75_clk;
+		genio_out[ 1] = hub75_le;
+		genio_out[ 0] = hub75_blank;
+
+		genio_oe[ 8] = 1'b1;
+		genio_oe[ 7] = 1'b1;
+		genio_oe[10] = 1'b1;
+		genio_oe[12] = 1'b1;
+		genio_oe[ 9] = 1'b1;
+		genio_oe[14] = 1'b1;
+		genio_oe[11] = 1'b1;
+		genio_oe[ 3] = 1'b1;
+		genio_oe[ 4] = 1'b1;
+		genio_oe[ 5] = 1'b1;
+		genio_oe[ 6] = 1'b1;
+		genio_oe[ 2] = 1'b1;
+		genio_oe[ 1] = 1'b1;
+		genio_oe[ 0] = 1'b1;
+	end
 
 	// PSRAM QPI interface
 	// -------------------
@@ -949,6 +1061,7 @@ module soc(
 			flash_dmaaddr <= 0;
 			flash_rdaddr <= 0;
 			flash_dmalen <= 0;
+			hub75_ctl <= 0;
 		end else begin
 			fsel_strobe <= 0;
 			flash_dma_run <= 0;
@@ -981,13 +1094,13 @@ module soc(
 					adc_divider <= mem_wdata[23:16];
 					adc_enabled <= mem_wdata[0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OUT) begin
-					genio_out <= mem_wdata[29:0];
+					genio_out_i <= mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OE) begin
-					genio_oe <= mem_wdata[29:0];
+					genio_oe_i <= mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2S) begin
-					genio_out <= genio_out | mem_wdata[29:0];
+					genio_out_i <= genio_out_i | mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2C) begin
-					genio_out <= genio_out & ~mem_wdata[29:0];
+					genio_out_i <= genio_out_i & ~mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GPEXT_OUT) begin
 					irda_sd <= mem_wdata[30];
 					pmod_out <= mem_wdata[23:16];
@@ -1007,6 +1120,8 @@ module soc(
 					pmod_out <= pmod_out & ~mem_wdata[23:16];
 					sao2_out <= sao2_out & ~mem_wdata[13:8];
 					sao1_out <= sao1_out & ~mem_wdata[5:0];
+				end else if (mem_addr[6:2]==MISC_REG_HUB75) begin
+					hub75_ctl <= mem_wdata;
 				end
 			end
 		end
@@ -1043,6 +1158,7 @@ IRQs used:
 4 - USB irq
 5 - GFX copper irq
 6 - Audio irq
+7 - HUB75 irq
 */
 
 	//Interrupt logic
@@ -1060,8 +1176,10 @@ IRQs used:
 		if (irq_audio) begin
 			irq[6] = 1;
 		end
+		if (irq_hub75) begin
+			irq[7] = 1;
+		end
 	end
-
 
 	//Unused pins
 endmodule

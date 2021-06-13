@@ -40,6 +40,7 @@ module simple_mem #(
 	input [WIDTH-1:0] wdata,
 	output reg [WIDTH-1:0] rdata
 );
+	(* syn_ramstyle="distributed" *)
 	reg [WIDTH:0] mem [0:WORDS-1];
 	
 	integer i;

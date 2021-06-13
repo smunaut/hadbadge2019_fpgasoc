@@ -286,7 +286,7 @@ module usb_ep_buf #(
 	endgenerate
 `else
 
-	reg [31:0] ram[0:512];
+	reg [31:0] ram[0:511];
 	reg [31:0] ram_rd;
 	reg [1:0] rds;
 	reg [7:0] rdm;

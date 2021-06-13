@@ -199,14 +199,12 @@ always @(posedge clk) begin
 		next_word <= 0;
 		if (state == STATE_IDLE) begin
 			spi_ncs_u <= 1;
-			clk_active <= 0;
 			if (do_read || do_write) begin
 				//New write or read cycle starts.
 				state <= STATE_CMDOUT;
 				bitno <= 7;
 				curr_is_read <= do_read;
 				spi_bus_qpi_u <= !(CMD_IS_SPI);
-				clk_active <= 1;
 			end else if (spi_xfer_claim) begin
 				state <= STATE_SPIXFER_CLAIMED;
 				bitno <= 7;
@@ -215,6 +213,7 @@ always @(posedge clk) begin
 			//Send out command
 			spi_ncs_u <= 0;
 			spi_oe_u <= 1;
+			clk_active <= 1;
 			if (CMD_IS_SPI) begin
 				spi_sout_u <= {3'h6, command[bitno]};
 				if (bitno == 0) begin
@@ -284,6 +283,7 @@ always @(posedge clk) begin
 					bitno <= 7;
 					if (!do_read) begin //abort?
 						state <= STATE_TRANSEND;
+						clk_active <= 0;
 						spi_ncs_u <= 1;
 					end
 				end else begin
@@ -297,6 +297,7 @@ always @(posedge clk) begin
 					//lowering do_write. This is why we use keep_transfering instead of do_write
 					if (!keep_transferring) begin //abort?
 						state <= STATE_TRANSEND;
+						clk_active <= 0;
 					end else begin
 						data_shifted <= wdata_be;
 						next_word <= 1;
@@ -343,7 +344,6 @@ always @(posedge clk) begin
 			spi_oe_u <= 0;
 			spi_bus_qpi_u <= 0;
 			state <= 0;
-			clk_active <= 0;
 		end
 	end
 end

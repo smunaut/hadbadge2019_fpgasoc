@@ -301,7 +301,7 @@ module top_fpga(
 
 	USRMCLK usrmclk_inst (
 		.USRMCLKI(flash_sclk),
-		.USRMCLKTS(!flash_selected)
+		.USRMCLKTS(1'b0)
 	) /* synthesis syn_noprune=1 */;
 
 	//Note: JTAG specs say we should sample on the rising edge of TCK. However, the LA readings show that 
